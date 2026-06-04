@@ -1,13 +1,14 @@
 # Kamus Data Class Diagram PPDB
 
-Dokumen ini membatasi kamus data hanya untuk fitur:
+Dokumen ini membatasi kamus data hanya untuk fitur aktif PPDB dan fitur management yang masih reachable di aplikasi:
 
 - PPDB
 - Account / Users
+- Notifikasi sistem dan WhatsApp
 - Template dan QR WhatsApp
-- Notifikasi
+- Landing/content management yang masih ada di hardcoded route frontend: contact, body, operational, banners, dan landing management
 
-Bagian lain di luar daftar tersebut tidak dimasukkan.
+Role dan route management dicatat sebagai supporting API untuk user assignment, permission, dan landing management. Fitur legacy seperti blog, gallery, event, schedule, email notification UI, Excel import/template respondent, dan `organization-management` tidak dimasukkan sebagai flow aktif.
 
 ## Daftar Role
 
@@ -25,9 +26,10 @@ Bagian lain di luar daftar tersebut tidak dimasukkan.
 | PPDB - Daftar Pertanyaan | Create, Read, Update, Delete, Reorder | Create, Read, Update, Delete, Reorder | Read pertanyaan untuk mengisi form |
 | PPDB - Berkas Pendaftaran Siswa | Read semua, verifikasi, update hasil, delete | Read semua, verifikasi, update hasil | Create/update jawaban sendiri, read hasil sendiri |
 | Account / Users | Read semua, create, update profil, update role, suspend/activate, delete | Read user, create user, update data sendiri | Read/update profil sendiri, update password sendiri |
-| Template WhatsApp | Create, Read, Update, Delete | Create, Read, Update, Delete | Tidak ada akses kelola |
-| QR / Session WhatsApp | Read status/session, scan QR, disconnect, send message | Read status jika UI diberikan, tidak disconnect/send manual | Tidak ada akses |
+| Template WhatsApp | Create, Read, Update, Delete lewat sidebar | API backend mengizinkan, tetapi tidak ada sidebar aktif | Tidak ada akses kelola |
+| QR / Session WhatsApp | Read status/session, scan QR, disconnect, send message | Tidak ada sidebar aktif | Tidak ada akses |
 | Notifikasi | Read notifikasi WhatsApp global + notifikasi sendiri, update/delete yang diizinkan, resend WhatsApp | Read notifikasi sendiri, delete yang diizinkan, resend WhatsApp | Read/mark-read/delete notifikasi sendiri |
+| Landing/Content Management Hardcoded | Manage contact, body, operational, banners, landing content | Manage sesuai route backend yang mengizinkan administrator | Tidak ada akses kelola |
 
 ## Relasi Class Utama
 
@@ -42,6 +44,8 @@ Bagian lain di luar daftar tersebut tidak dimasukkan.
 | Answer - Result | one-to-one logical | Satu paket submission di `tb_answers.submission_id` dapat punya satu hasil di `tb_results.submission_answers`. |
 | NotificationWhatsAppMessage - Notification | logical reference | Template WA dipakai untuk membentuk isi pesan/notifikasi, tidak ada foreign key langsung. |
 | WhatsAppSession - WhatsAppQRCode | one-to-one runtime | QR dan status koneksi dikelola di socket server, bukan tabel database permanen. |
+| Contact/Body/Operational/Banner/Logo - Public Landing | data source | Data konten sekolah dipakai halaman landing/public dan sebagian dashboard. |
+| Landing - Route | many-to-one | Landing content terhubung ke route hardcoded/dynamic melalui `route_id`. |
 
 ## Class: User
 
@@ -264,10 +268,10 @@ Operasi role:
 
 | Operasi | SA | ADM | USR |
 | --- | --- | --- | --- |
-| listTemplates() | Ya | Ya | Tidak |
-| createTemplate() | Ya | Ya | Tidak |
-| updateTemplate() | Ya | Ya | Tidak |
-| deleteTemplate() | Ya | Ya | Tidak |
+| listTemplates() | Ya | API backend mengizinkan, tidak ada sidebar aktif | Tidak |
+| createTemplate() | Ya | API backend mengizinkan, tidak ada sidebar aktif | Tidak |
+| updateTemplate() | Ya | API backend mengizinkan, tidak ada sidebar aktif | Tidak |
+| deleteTemplate() | Ya | API backend mengizinkan, tidak ada sidebar aktif | Tidak |
 
 ## Class: WhatsAppSession
 
@@ -275,8 +279,8 @@ Sumber data utama: runtime socket server, bukan tabel database permanen.
 
 | Attribute | Type | Key / Rule | Akses Role | Keterangan |
 | --- | --- | --- | --- | --- |
-| status / whatsapp_status | string | runtime | SA read, ADM read jika UI diberikan | Status koneksi seperti `qr-pending`, `authenticated`, `ready`, `disconnected`, `auth_failure`. |
-| client_ready | boolean | runtime | SA read, ADM read jika UI diberikan | Penanda client WhatsApp siap kirim pesan. |
+| status / whatsapp_status | string | runtime | SA read, ADM tidak ada sidebar aktif | Status koneksi seperti `qr-pending`, `authenticated`, `ready`, `disconnected`, `auth_failure`. |
+| client_ready | boolean | runtime | SA read, ADM tidak ada sidebar aktif | Penanda client WhatsApp siap kirim pesan. |
 | session_exists | boolean | runtime | SA read | Penanda session tersimpan/aktif. |
 | reconnect_attempts | integer | runtime | SA read | Jumlah percobaan reconnect. |
 | timestamp | datetime/string | runtime | SA read | Waktu snapshot status. |
@@ -285,8 +289,8 @@ Operasi role:
 
 | Operasi | SA | ADM | USR |
 | --- | --- | --- | --- |
-| getWhatsAppStatus() | Ya | Read-only jika UI diberikan | Tidak |
-| getWhatsAppSession() | Ya | Read-only jika UI diberikan | Tidak |
+| getWhatsAppStatus() | Ya | Tidak ada sidebar aktif | Tidak |
+| getWhatsAppSession() | Ya | Tidak ada sidebar aktif | Tidak |
 | sendWhatsAppNotification() | Ya | Tidak | Tidak |
 | disconnectWhatsApp() | Ya | Tidak | Tidak |
 
@@ -318,19 +322,26 @@ Controller di bawah mengikuti kode Laravel di `backend/app/Http/Controllers` dan
 | --- | --- | --- | --- | --- | --- |
 | Account / Auth | `API\AuthController` | `register`, `login`, `verifyOtp`, `requestLoginOtp`, `requestPasswordResetOtp`, `resendOtp`, `changePassword`, `changePhoneNumber`, `logout`, `isAuthenticated`, `updateLastOnline` | `User`, `Otp`, `UserLoginDetail`, `Notification`; `NotificationHelper`; socket WA untuk OTP | Public untuk register/login/OTP request, auth untuk logout/update online, own account untuk password/phone | Registrasi, login, OTP WhatsApp, update password/nomor, token session, dan status online user. |
 | Account / Users | `UserController` | `search`, `getByUsername`, `all`, `index`, `view`, `store`, `updatePassword`, `update`, `actived`, `suspend`, `delete` | `User`, `Role`, `RoleUser`, `Notification`; `NotificationHelper`; S3 avatar | SA full termasuk role/status/suspend/delete, ADM create/read, USR own profile/password | Management user, account profile, update role, activate/suspend, delete user, avatar, dan notifikasi perubahan akun. |
-| Account / Roles | `RoleController` | `all`, `index`, `view`, `store`, `update`, `delete` | `Role`, `RoleUser` | SA/ADM manage lewat route, delete ditolak jika role masih dipakai user | CRUD role dan proteksi penghapusan role yang masih terpasang ke user. |
+| Supporting / Roles | `RoleController` | `all`, `index`, `view`, `store`, `update`, `delete` | `Role`, `RoleUser` | Supporting API. Standalone `/roles` ada di hardcoded route, tetapi tidak menjadi flow sidebar utama | Data role untuk assignment user, filter/target notifikasi, dan middleware role. |
 | PPDB - Periode | `Form\PeriodController` | `all`, `index`, `view`, `store`, `update`, `delete`, `broadcastToUserSubmitted` | `Form\Period`, `Form\Answers`, `NotificationWhatsAppMessage`; `NotificationHelper`; socket HTTP | SA create/update/delete/broadcast, ADM/USR read periode yang tersedia | Kelola periode PPDB, status/publish/archive, jumlah question/answer, dan broadcast ke user yang sudah submit. |
 | PPDB - Pertanyaan | `Form\QuestionController` | `show`, `view`, `find`, `store`, `update`, `updateOrder`, `destroy` | `Form\Questions`, `Form\Period` | SA/ADM CRUD dan reorder, USR read untuk isi form | Kelola daftar pertanyaan, tipe input, opsi, file type, required flag, page, dan sort order. |
 | PPDB - Jawaban/Berkas | `Form\AnswerController` | `getSubmissionsPerDayByPeriod`, `getSubmissionsPerDayDetail`, `getSubmissionsByPeriod`, `getStatusTotals`, `getGroupedAnswersPublic`, `getGroupedAnswers`, `getBySubmission`, `submitAnswers`, `updateAnswers`, `deleteRespondentBySubmission` | `Form\Answers`, `Form\Questions`, `Form\Period`, `Form\Result`, `NotificationWhatsAppMessage`; `NotificationHelper`, `StatusHelper`; S3; socket HTTP | Auth required untuk mayoritas endpoint, public hanya grouped public; SA/ADM operasional semua submission, USR submission sendiri | Simpan/update jawaban, upload berkas, grouping submission, dashboard statistik, status kelulusan, notifikasi submission baru, dan delete respondent. |
 | PPDB - Result/Verifikasi | `Form\ResultController` | `listPeriods`, `show`, `verify`, `update`, `download`, `downloadMultiple` | `Form\Answers`, `Form\Result`, `Form\Period`; `StatusHelper`, `NotificationHelper`, `SocketHelper`; S3 | Auth untuk result show/verify/update/list; file download endpoint berada di route public; secara UI SA/ADM memverifikasi, USR membaca hasil sendiri | Verifikasi berkas, update hasil seleksi, format status berdasarkan role/publish, kirim socket update, kirim WA result, dan download berkas. |
-| PPDB - Excel | `Form\ExcelController` | `export`, `import`, `downloadTemplate` | `RespondentsExport`, `RespondentsImport`; `Form\Period`, `Form\Answers`, `Form\Questions`, `Form\Result` lewat import/export | Middleware route saat ini dikomentari; seharusnya dipakai untuk operator PPDB | Export, import, dan template Excel data respondent PPDB. |
-| Template WhatsApp | `WhatsAppNotificationController` | `index`, `store`, `show`, `update`, `destroy` | `NotificationWhatsAppMessage` | `index` terbuka, create/update/delete SA/ADM | CRUD template pesan WhatsApp yang dipakai notifikasi PPDB/account. |
-| QR / Session WhatsApp | `WhatsappController` | `sendWhatsappNotification`, `disconnectWhatsapp`, `getWhatsappStatus`, `getWhatsappSession` | Socket server WhatsApp; `API_KEY`, `SOCKET_SERVER_URL` | Send/disconnect route SA; status/session bergantung route/UI yang memanggil | Proxy Laravel ke socket server untuk kirim WA manual, disconnect session, health status, session info, dan QR runtime. |
-| Notifikasi | `NotificationController` | `index`, `view`, `markAsRead`, `markAllAsRead`, `update`, `delete`, `resendNotification`, `bulkDelete` | `Notification`, `User`; socket WA saat resend | SA lihat semua WA + own, ADM/USR own sesuai label, resend WA SA/ADM | List/preview notifikasi, filter email, mark read, update/delete, unread count, dan resend WhatsApp. |
+| PPDB - Excel Export | `Form\ExcelController` | `export` | `RespondentsExport`; `Form\Period`, `Form\Answers`, `Form\Questions`, `Form\Result` lewat export | Route middleware auth/role masih dikomentari, tetapi tombol export aktif di UI respondent | Export data respondent PPDB. Import dan template dikeluarkan dari flow aktif karena tombol UI hidden. |
+| Template WhatsApp | `WhatsAppNotificationController` | `index`, `store`, `show`, `update`, `destroy` | `NotificationWhatsAppMessage` | Sidebar aktif hanya SA; backend create/update/delete juga mengizinkan ADM | CRUD template pesan WhatsApp yang dipakai notifikasi PPDB/account. |
+| QR / Session WhatsApp | `WhatsappController` | `sendWhatsappNotification`, `disconnectWhatsapp`; internal `getWhatsappStatus`, `getWhatsappSession` | Socket server WhatsApp; `API_KEY`, `SOCKET_SERVER_URL` | Sidebar aktif dan send/disconnect hanya SA | Proxy Laravel ke socket server untuk kirim WA manual, disconnect session, health status, session info, dan QR runtime. |
+| Notifikasi | `NotificationController` | `index`, `view`, `markAsRead`, `markAllAsRead`, `update`, `delete`, `resendNotification` | `Notification`, `User`; socket WA saat resend | SA lihat semua WA + own, ADM/USR own sesuai label, resend WA SA/ADM | List/preview notifikasi, filter email, mark read, update/delete, unread count, dan resend WhatsApp. |
+| Content - Contact | `ContactController` | `index`, `getActive`, `show`, `store`, `update`, `destroy`, `updateOrder`, `toggleActive` | `Contact` | Public read untuk landing, auth untuk management route | Kelola kontak landing/public dan urutan kontak. |
+| Content - Body | `BodyController` | `show`, `update` | `Body` | Public read, update SA/ADM | Kelola deskripsi, alamat, dan link Google Maps landing. |
+| Content - Operational | `OperationalController` | `index`, `update` | `OperationalHour`, `OperationalNote` | Public read, update SA/ADM | Kelola jam operasional dan catatan aktif. |
+| Content - Banners | `BannerController` | `index`, `view`, `store`, `update`, `delete` | `BannerImage` | Public read, create/update/delete SA/ADM | Kelola banner landing/public. |
+| Content - Landing | `LandingController` | `all`, `index`, `show`, `store`, `update`, `destroy` | `Landing`, `Route` | Public read, create/update/delete SA/ADM | Kelola konten landing yang terhubung ke route. |
+| Content - Routes | `RouteController` | `all`, `index`, `show`, `store`, `update`, `destroy` | `Route` | Supporting API untuk landing management | Kelola route name yang dipakai landing content. |
+| Content - Logo | `LogoController` | `show`, `update`, `destroy` | `Logo` | Public read, update SA/ADM | Logo dan background header aplikasi. |
 
 ## Kamus Method Controller Backend
 
-Kamus method di bawah hanya mencatat controller yang berhubungan dengan scope PPDB, account/users, template dan QR WhatsApp, serta notifikasi. Controller Blog, Gallery, Contact CMS, schedule management, dan role management tidak dijabarkan sebagai flow aktif karena menu management-nya tidak ditampilkan atau sedang dikomentari di UI.
+Kamus method di bawah hanya mencatat controller yang berhubungan dengan scope PPDB, account/users, template dan QR WhatsApp, notifikasi, dan content management hardcoded yang masih reachable. Controller Blog, Gallery, Event, Schedule, dan Excel import/template respondent tidak dijabarkan sebagai flow aktif.
 
 ### `App\Http\Controllers\API\AuthController`
 
@@ -470,8 +481,8 @@ Method private penting:
 | Method | Route | Akses | Input Utama | Output / Dampak |
 | --- | --- | --- | --- | --- |
 | `export(Request $request)` | `POST /api/respondent/excel/export` | Route middleware auth/role saat ini dikomentari; UI export masih tampil | `period_id?` | Export respondent ke XLSX, semua period atau per period. |
-| `downloadTemplate(Request $request)` | `GET /api/respondent/excel/template` | Route middleware auth/role saat ini dikomentari; tombol UI hidden | `period_id?` | Download template XLSX respondent. Tidak masuk flow aktif UI. |
-| `import(Request $request)` | `POST /api/respondent/excel/import` | Route middleware auth/role saat ini dikomentari; tombol UI hidden | `file`, `period_id?` | Import respondent dari XLS/XLSX, bisa auto-create period. Tidak masuk flow aktif UI. |
+
+Catatan: selain export, endpoint Excel respondent lain tidak dijadikan flow aktif karena tombol Template dan Import dibungkus `hidden` di halaman respondent.
 
 ### `App\Http\Controllers\NotificationController`
 
@@ -515,23 +526,98 @@ Method private penting:
 | `getWhatsappStatus()` | Tidak terdaftar di `api.php` | Internal / non-route aktif | Tidak ada | Proxy health check ke socket server `/health`. Frontend saat ini lebih banyak memakai socket/session langsung dari Node.js. |
 | `getWhatsappSession()` | Tidak terdaftar di `api.php` | Internal / non-route aktif | Tidak ada | Proxy session info ke socket server `/api/whatsapp-session`, termasuk QR runtime, status, retry, dan timestamp. |
 
+### `App\Http\Controllers\ContactController`
+
+| Method | Route | Akses | Input Utama | Output / Dampak |
+| --- | --- | --- | --- | --- |
+| `index()` | `GET /api/contacts` | Public route | Tidak ada | List semua contact untuk admin panel/content. |
+| `getActive()` | `GET /api/contacts/active` | Public route | Tidak ada | List contact aktif untuk landing/public page. |
+| `show($id)` | `GET /api/contacts/{id}` | Public route | `id` | Detail satu contact. |
+| `store(Request $request)` | `POST /api/contacts` | Auth | `platform`, `value`, `icon_name?`, `label?`, `bg_color?`, `order?`, `is_active?` | Membuat contact baru. |
+| `update(Request $request, $id)` | `PUT/PATCH /api/contacts/{id}` | Auth | Field contact yang berubah | Update contact. |
+| `destroy($id)` | `DELETE /api/contacts/{id}` | Auth | `id` | Hapus contact. |
+| `updateOrder(Request $request)` | `POST /api/contacts/update-order` | Auth | `contacts[].id`, `contacts[].order` | Update urutan contact. |
+| `toggleActive($id)` | `PATCH /api/contacts/{id}/toggle-active` | Auth | `id` | Toggle status aktif contact. |
+
+### `App\Http\Controllers\BodyController`
+
+| Method | Route | Akses | Input Utama | Output / Dampak |
+| --- | --- | --- | --- | --- |
+| `show()` | `GET /api/body` | Public route | Tidak ada | Mengambil body/identitas landing. |
+| `update(Request $request)` | `POST /api/body` | Auth + `role:administrator|super admin` | `description?`, `address?`, `google_map_link?` | Update atau create body landing. |
+
+### `App\Http\Controllers\OperationalController`
+
+| Method | Route | Akses | Input Utama | Output / Dampak |
+| --- | --- | --- | --- | --- |
+| `index()` | `GET /api/operational` | Public route | Tidak ada | Mengambil jam operasional dan catatan aktif. |
+| `update(Request $request)` | `PUT /api/operational` | Auth + `role:administrator|super admin` | `hours[]`, `note?` | Update 7 hari jam operasional dan catatan aktif. |
+
+### `App\Http\Controllers\BannerController`
+
+| Method | Route | Akses | Input Utama | Output / Dampak |
+| --- | --- | --- | --- | --- |
+| `index(Request $request)` | `GET /api/banners` | Public route | Pagination/filter request | List banner. |
+| `view(Request $request, $id = null)` | `GET /api/banners/view/{id?}` | Public route | `id?` | Detail banner atau banner utama. |
+| `store(Request $request)` | `POST /api/banners` | Auth + `role:administrator|super admin` | `banners[]` image | Upload banner ke S3 dan simpan data banner. |
+| `update(Request $request, $id)` | `POST /api/banners/{id}` | Auth + `role:administrator|super admin` | File/image dan metadata banner | Update banner. |
+| `delete($id)` | `DELETE /api/banners/{id}` | Auth + `role:administrator|super admin` | `id` | Hapus banner dan file terkait. |
+
+### `App\Http\Controllers\LandingController`
+
+| Method | Route | Akses | Input Utama | Output / Dampak |
+| --- | --- | --- | --- | --- |
+| `all()` | `GET /api/landings/all` | Public route | Tidak ada | List semua landing content tanpa pagination. |
+| `index(Request $request)` | `GET /api/landings` | Public route | `page`, `perPage`, `search`, `route_id?` | List landing content paginated. |
+| `show($id)` | `GET /api/landings/{id}` | Public route | `id` | Detail landing content. Catatan: route file saat ini memetakan endpoint ini ke `view`, sedangkan method controller yang tersedia adalah `show`. |
+| `store(Request $request)` | `POST /api/landings` | Auth + `role:administrator|super admin` | `route_id`, `title`, `subtitle?`, `icon?`, `description?` | Membuat landing content. |
+| `update(Request $request, $id)` | `PUT /api/landings/{id}` | Auth + `role:administrator|super admin` | Field landing yang berubah | Update landing content. |
+| `destroy($id)` | `DELETE /api/landings/{id}` | Auth + `role:administrator|super admin` | `id` | Hapus landing content. |
+
+### `App\Http\Controllers\RouteController`
+
+| Method | Route | Akses | Input Utama | Output / Dampak |
+| --- | --- | --- | --- | --- |
+| `all()` | `GET /api/routes/all` | Public route | Tidak ada | List semua route untuk landing management. |
+| `index(Request $request)` | `GET /api/routes` | Public route | `page`, `perPage`, `search` | List route paginated. |
+| `show($id)` | `GET /api/routes/{id}` | Public route | `id` | Detail route beserta landing. |
+| `store(Request $request)` | `POST /api/routes` | Role `administrator|super admin` | `route_name`, `landing?` | Membuat route dan landing terkait. |
+| `update(Request $request, $id)` | `PUT /api/routes/{id}` | Role `administrator|super admin` | `route_name`, `landing?` | Update route dan landing terkait. |
+| `destroy($id)` | `DELETE /api/routes/{id}` | Role `administrator|super admin` | `id` | Hapus route. |
+
+### `App\Http\Controllers\LogoController`
+
+| Method | Route | Akses | Input Utama | Output / Dampak |
+| --- | --- | --- | --- | --- |
+| `show()` | `GET /api/logo` | Public route | Tidak ada | Mengambil logo dan background header aktif. |
+| `update(Request $request)` | `POST /api/logo/update` | Auth + `role:administrator|super admin` | `image?`, `background_header?` | Upload/update logo dan background header ke S3. |
+| `destroy(Request $request)` | Route delete tidak tampak di `api.php` aktif | Internal / non-route aktif | `type=logo/background_header` | Menghapus logo atau background header. |
+
 ## Backend Model Yang Bersangkutan
 
 | Model | Tabel / Sumber | Field Utama | Relasi / Referensi | Dipakai Oleh |
 | --- | --- | --- | --- | --- |
 | `App\Models\User` | `users` | `name`, `phone_number`, `otp_verified`, `email`, `status`, `password`, `avatar`, `last_online_at` | many-to-many `roles`, hasMany `otps`, hasMany `notiffications`, hasMany `answers` secara logical | `AuthController`, `UserController`, `AnswerController`, `ResultController`, `NotificationController` |
-| `App\Models\Role` | `roles` | `name`, `display_name`, `description` | belongsToMany `routes`, pivot `role_user` untuk user | `RoleController`, `UserController`, middleware role |
-| `App\Models\RoleUser` | `role_user` | `role_id`, `user_id`, `user_type` | belongsTo `User`; pivot Laratrust | `RoleController`, `UserController` |
+| `App\Models\Role` | `roles` | `name`, `display_name`, `description` | belongsToMany `routes`, pivot `role_user` untuk user | `RoleController` sebagai supporting API, `UserController`, middleware role |
+| `App\Models\RoleUser` | `role_user` | `role_id`, `user_id`, `user_type` | belongsTo `User`; pivot Laratrust | `RoleController` sebagai supporting API, `UserController` |
 | `App\Models\Otp` | `otps` | `user_id`, `otp_code`, `type`, `expires_at`, `is_used` | belongs to user secara logical | `API\AuthController` |
 | `App\Models\UserLoginDetail` | `user_login_details` | `user_id`, `platform`, `browser`, `ip_address`, `email`, `name` | tidak ada relasi eksplisit | `API\AuthController` |
 | `App\Models\Form\Period` | `tb_period` | `key`, `title`, `description`, `status`, `is_published`, `is_archived` | hasMany `questions`, hasMany `answers`; scope `active`, `published`, `archived` | `PeriodController`, `QuestionController`, `AnswerController`, `ResultController`, `ExcelController` |
-| `App\Models\Form\Questions` | `tb_questions` | `question`, `period_id`, `type`, `label`, `options`, `page`, `author_id`, `file_types`, `sort_order`, `is_required` | belongsTo `period`, hasMany `answers` | `QuestionController`, `AnswerController`, import/export PPDB |
-| `App\Models\Form\Answers` | `tb_answers` | `question_id`, `period_id`, `submission_id`, `user_id`, `answer`, `file_path`, `type`, `options`, `page`, `sort_order` | belongsTo `user`, `period`, `question`; logical one-to-one ke `Result` via submission | `AnswerController`, `ResultController`, `PeriodController`, import/export PPDB |
-| `App\Models\Form\Result` | `tb_results` | `submission_answers`, `selection_type`, `value`, `status`, `is_approve` | logical reference ke `tb_answers.submission_id` | `ResultController`, `AnswerController`, import/export PPDB |
+| `App\Models\Form\Questions` | `tb_questions` | `question`, `period_id`, `type`, `label`, `options`, `page`, `author_id`, `file_types`, `sort_order`, `is_required` | belongsTo `period`, hasMany `answers` | `QuestionController`, `AnswerController`, Excel export PPDB |
+| `App\Models\Form\Answers` | `tb_answers` | `question_id`, `period_id`, `submission_id`, `user_id`, `answer`, `file_path`, `type`, `options`, `page`, `sort_order` | belongsTo `user`, `period`, `question`; logical one-to-one ke `Result` via submission | `AnswerController`, `ResultController`, `PeriodController`, Excel export PPDB |
+| `App\Models\Form\Result` | `tb_results` | `submission_answers`, `selection_type`, `value`, `status`, `is_approve` | logical reference ke `tb_answers.submission_id` | `ResultController`, `AnswerController`, Excel export PPDB |
 | `App\Models\Notification` | `tb_notification` | `key`, `label`, `title`, `message`, `user_id`, `is_read` | belongsTo `User`; helper `createNotification`, `markAsRead` | `NotificationController`, `NotificationHelper`, `AuthController`, `UserController`, PPDB controller |
 | `App\Models\NotificationWhatsAppMessage` | `notification_whatsapp_messages` | `code`, `label`, `message`, `placeholder` | logical reference dari template code | `WhatsAppNotificationController`, `NotificationHelper`, `AnswerController`, `ResultController`, `PeriodController` |
 | `WhatsAppSession` | runtime socket server | `status`, `client_ready`, `session_exists`, `reconnect_attempts`, `timestamp` | tidak ada tabel permanen | `WhatsappController`, frontend QR/session page |
 | `WhatsAppQRCode` | runtime socket event / session endpoint | `qr`, `qr_available`, `qr_retry`, `qr_updated_at`, `qr_code_scanned` | bagian dari session runtime | `WhatsappController`, socket server, frontend QR/session page |
+| `App\Models\Contact` | `tb_contact` | `platform`, `value`, `icon_name`, `label`, `bg_color`, `order`, `is_active` | scope `active`, `ordered`, `platform` | `ContactController`, public landing/contact UI |
+| `App\Models\Body` | `tb_body` | `description`, `address`, `google_map_link` | single row content | `BodyController`, landing body/address UI |
+| `App\Models\OperationalHour` | `operational_hours` | `day`, `open_time`, `close_time`, `is_closed` | grouped with `OperationalNote` in response | `OperationalController` |
+| `App\Models\OperationalNote` | `operational_notes` | `note`, `is_active` | active note used with hours | `OperationalController` |
+| `App\Models\BannerImage` | `banner_images` | `image_data`, `is_primary` | S3 URL accessor for image path | `BannerController`, public carousel/banner UI |
+| `App\Models\Landing` | `tb_landing` | `route_id`, `title`, `subtitle`, `icon`, `description` | belongsTo `Route`; scopes `search`, `byRoute` | `LandingController`, `RouteController` |
+| `App\Models\Route` | `tb_route` | `route_name` | hasOne `Landing`; route name lowercase mutator | `RouteController`, `LandingController` |
+| `App\Models\Logo` | `tb_logo` | `image`, `background_header` | single row branding asset | `LogoController`, app layout branding |
 
 ## Backend Helper Yang Bersangkutan
 
@@ -551,13 +637,16 @@ Method private penting:
 - `/form/question` read membutuhkan auth, sedangkan create/update/order/delete dibatasi `role:administrator|super admin`.
 - `/form/answer/group/respondent/public` public; endpoint answer lain membutuhkan auth.
 - `/respondent/result/files/download` dan `/respondent/result/files/download-multiple` berada di luar middleware auth pada route saat ini.
-- `/respondent/excel` route export/import/template saat ini middleware `auth:sanctum` + `role:administrator|super admin` masih dikomentari di route.
+- `/respondent/excel/export` masih tampil di UI respondent. `/respondent/excel/import` dan `/respondent/excel/template` ada di route, tetapi tidak masuk flow aktif karena tombol UI hidden.
 - `/notifications` selalu mengecualikan label `email`; resend hanya untuk notifikasi `whatsapp`.
-- `/whatsapp-notifications` `index` terbuka; create/update/delete dibatasi `auth:sanctum` + `role:administrator|super admin`.
-- `/send-whatsapp` dan `/logout-whatsapp` dibatasi `auth:sanctum` + `role:super admin`.
+- `/whatsapp-notifications` `index` terbuka; create/update/delete dibatasi `auth:sanctum` + `role:administrator|super admin`. Sidebar aktifnya saat ini hanya di Super Admin.
+- `/send-whatsapp` dan `/logout-whatsapp` dibatasi `auth:sanctum` + `role:super admin`, dan UI QR/session aktif hanya di Super Admin.
+- `/contact`, `/body`, `/operational`, `/banners`, dan `/landing-management` adalah route frontend hardcoded yang masih didokumentasikan sebagai content management.
+- `/roles` ada di route frontend hardcoded, tetapi di diagram ini diperlakukan sebagai supporting API untuk user assignment dan permission, bukan flow utama.
+- `/organization-management` tidak dimasukkan karena route frontend mengarah ke component yang tidak terdaftar di `componentMap`.
 
 ## Catatan Boundary
 
 - Fitur email notification tidak dimasukkan sebagai fitur aktif karena label `email` difilter dari daftar notifikasi.
 - QR WhatsApp dan session WhatsApp adalah class runtime untuk kebutuhan class diagram, bukan tabel database.
-- Result/verifikasi dijabarkan hanya sampai kebutuhan PPDB. Detail import/export Excel, socket runtime internal, dan auth flow di luar account/users tidak diperluas menjadi class diagram terpisah.
+- Result/verifikasi dijabarkan hanya sampai kebutuhan PPDB. Import/template Excel, socket runtime internal, dan auth flow di luar account/users tidak diperluas menjadi class diagram terpisah.
