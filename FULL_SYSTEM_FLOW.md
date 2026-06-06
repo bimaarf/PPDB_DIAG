@@ -46,7 +46,7 @@ sequenceDiagram
     Siswa->>FE: Isi jawaban dan unggah berkas
     FE->>Answer: Kirim jawaban dan file ke server
     Answer->>DB: Pastikan periode aktif, jawaban lengkap, dan file sesuai aturan
-    Answer->>DB: Simpan jawaban dan buat nomor pendaftaran
+    Answer->>DB: Simpan jawaban, path file S3, dan nomor pendaftaran
     Answer-->>FE: Formulir berhasil dikirim
 
     par Notifikasi setelah formulir tersimpan
@@ -120,7 +120,7 @@ sequenceDiagram
 
 1. **Halaman Web** dipakai siswa dan admin untuk mengirim data ke server.
 2. **Layanan Login** menangani login, OTP, registrasi, reset password, dan token login.
-3. **Layanan Pendaftaran** menyimpan jawaban siswa, file berkas, dan nomor pendaftaran.
+3. **Layanan Pendaftaran** menyimpan jawaban siswa, path file dari bucket storage S3, dan nomor pendaftaran.
 4. **Layanan Berkas dan Hasil** menangani verifikasi berkas dan hasil seleksi.
 5. **Aturan Status** menentukan status yang boleh terlihat oleh siswa atau admin.
 6. **Layanan Notifikasi** mengambil template WhatsApp dan mengirim pesan melalui gateway.
