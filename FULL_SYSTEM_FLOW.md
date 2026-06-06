@@ -1,134 +1,128 @@
-# Full System Flow - PSB Digital Architecture
+Full System Flow - PSB Digital Architecture
+Dokumen ini menjelaskan alur utama sistem PSB dengan bahasa proses: pengguna login, siswa mengisi formulir pendaftaran, admin/panitia memeriksa berkas, lalu admin/panitia mengisi hasil seleksi. Flow ini hanya memuat fitur yang dipakai pada proses utama.
 
-Dokumen ini menjelaskan alur utama sistem PSB: user login/terautentikasi, siswa mengisi formulir pendaftaran, admin/panitia memverifikasi berkas, lalu admin/panitia mengisi hasil seleksi. Flow ini hanya memuat fitur yang dipakai pada proses utama.
-
-```mermaid
 sequenceDiagram
     autonumber
     actor Siswa
     actor Admin as Admin/Panitia
-    participant FE as React SPA
-    participant Auth as AuthController
-    participant Period as Period/Question Controller
-    participant Answer as AnswerController
-    participant Result as ResultController
-    participant Status as StatusHelper
-    participant Notif as NotificationHelper
-    participant DB as MySQL Database
-    participant Socket as Socket.IO Server
-    participant WA as WhatsApp API
+    participant FE as Halaman Web
+    participant Auth as Layanan Login
+    participant Period as Layanan Formulir
+    participant Answer as Layanan Pendaftaran
+    participant Result as Layanan Berkas dan Hasil
+    participant Status as Aturan Status
+    participant Notif as Layanan Notifikasi
+    participant DB as Database
+    participant Socket as Server Realtime
+    participant WA as WhatsApp
 
-    Note over Siswa, Auth: Autentikasi dasar
+    Note over Siswa, Auth: Login pengguna
     Siswa->>FE: Login
-    FE->>Auth: POST /api/login
-    Auth->>DB: Cek user, password, status, role
-    alt sudah otp_verified
-        Auth-->>FE: 200 token Sanctum + data user
-    else belum otp_verified
-        Auth->>DB: Ambil/generate OTP login
-        Auth->>WA: Kirim OTP WhatsApp
-        Auth-->>FE: 200 user_id + otp_expires_at
-        Siswa->>FE: Input OTP
-        FE->>Auth: POST /api/verify-otp
-        Auth->>DB: Tandai OTP used, set otp_verified, buat token
-        Auth-->>FE: 200 token Sanctum + data user
+    FE->>Auth: Kirim data login ke server
+    Auth->>DB: Cocokkan akun, password, status, dan role
+    alt akun sudah terverifikasi OTP
+        Auth-->>FE: Login berhasil, masuk dashboard sesuai role
+    else akun belum terverifikasi OTP
+        Auth->>DB: Gunakan OTP aktif atau buat OTP baru
+        Auth->>WA: Kirim kode OTP ke WhatsApp siswa
+        Auth-->>FE: Tampilkan kolom OTP dan masa berlaku kode
+        Siswa->>FE: Masukkan OTP
+        FE->>Auth: Kirim kode OTP untuk diperiksa
+        Auth->>DB: Cek OTP masih berlaku dan belum dipakai
+        Auth-->>FE: Login berhasil, masuk dashboard sesuai role
     end
 
     Note over Siswa, Answer: Pengisian formulir pendaftaran
     Siswa->>FE: Buka periode/form PPDB
-    FE->>Period: GET /api/form/period
-    Period->>DB: Ambil periode aktif
-    Period-->>FE: Data periode
-    FE->>Period: GET /api/form/question/find/{periodKey}
-    Period->>DB: Ambil pertanyaan periode
-    Period-->>FE: Schema form
+    FE->>Period: Minta daftar periode pendaftaran
+    Period->>DB: Cari periode yang sedang dibuka
+    Period-->>FE: Tampilkan periode tersedia
+    FE->>Period: Minta daftar pertanyaan pada periode
+    Period->>DB: Ambil pertanyaan formulir
+    Period-->>FE: Tampilkan formulir pendaftaran
 
-    Siswa->>FE: Isi jawaban dan upload file
-    FE->>Answer: POST /api/form/answer
-    Answer->>DB: Validasi periode, pertanyaan, required field, file
-    Answer->>DB: Simpan data ke tb_answers
-    Answer-->>FE: 200 Answers submitted successfully
+    Siswa->>FE: Isi jawaban dan unggah berkas
+    FE->>Answer: Kirim jawaban dan file ke server
+    Answer->>DB: Pastikan periode aktif, jawaban lengkap, dan file sesuai aturan
+    Answer->>DB: Simpan jawaban dan buat nomor pendaftaran
+    Answer-->>FE: Formulir berhasil dikirim
 
-    par Background setelah response submit
-        Answer->>Notif: sendWhatsApp(template: new_submission)
-        Notif->>Socket: POST /send-whatsapp
+    par Notifikasi setelah formulir tersimpan
+        Answer->>Notif: Minta kirim pesan formulir berhasil diterima
+        Notif->>Socket: Teruskan pesan ke gateway WhatsApp
         Socket->>WA: Kirim WhatsApp ke siswa
     and
-        Answer->>Socket: POST /notify-new-submission
-        Socket-->>Admin: Realtime notification pendaftar baru
+        Answer->>Socket: Kabari dashboard admin
+        Socket-->>Admin: Notifikasi pendaftar baru secara realtime
     end
 
     Note over Admin, Result: Verifikasi berkas
-    Admin->>FE: Buka daftar submission
-    FE->>Answer: GET /api/form/answer/group/respondent
-    Answer->>DB: Ambil tb_answers, tb_results, tb_period
-    Answer->>Status: Hitung validation_status
-    Answer-->>FE: List submission + status berkas
+    Admin->>FE: Buka daftar pendaftar
+    FE->>Answer: Minta daftar pendaftar
+    Answer->>DB: Ambil data pendaftar, berkas, hasil, dan periode
+    Answer->>Status: Hitung status berkas
+    Answer-->>FE: Tampilkan daftar pendaftar dan status berkas
 
-    Admin->>FE: Approve / kembalikan berkas
-    FE->>Result: POST /api/respondent/result/verify/{submissionId}
-    Result->>DB: Create/update tb_results.is_approve
+    Admin->>FE: Pilih berkas diterima atau dikembalikan
+    FE->>Result: Kirim keputusan verifikasi berkas
+    Result->>DB: Simpan status verifikasi berkas
     Result->>Status: Hitung status berkas
-    Result-->>FE: 201 Data verified successfully
+    Result-->>FE: Berkas berhasil diverifikasi
 
-    par Background setelah response verifikasi
-        Result->>Socket: POST /notify-result-verified
-        Socket-->>FE: Update UI realtime
+    par Notifikasi setelah verifikasi
+        Result->>Socket: Kabari dashboard bahwa berkas sudah dicek
+        Socket-->>FE: Perbarui tampilan secara realtime
     and
         alt berkas diterima
-            Result->>Notif: sendWhatsApp(template: document_received)
+            Result->>Notif: Siapkan pesan berkas diterima
         else berkas dikembalikan
-            Result->>Notif: sendWhatsApp(template: document_rejected)
+            Result->>Notif: Siapkan pesan berkas dikembalikan
         end
-        Notif->>Socket: POST /send-whatsapp
+        Notif->>Socket: Teruskan pesan ke gateway WhatsApp
         Socket->>WA: Kirim WhatsApp ke siswa
     end
 
-    Note over Admin, Result: Update hasil seleksi
-    Admin->>FE: Isi selection_type, value, status lulus/tidak lulus
-    FE->>Result: PUT /api/respondent/result/upadte/{submissionId}
-    Result->>DB: Update tb_results.selection_type, value, status
-    Result->>Status: Hitung validation_status terbaru
-    Result-->>FE: 200 Data updated successfully
+    Note over Admin, Result: Pengisian hasil seleksi
+    Admin->>FE: Isi jenis seleksi, nilai, dan status lulus/tidak lulus
+    FE->>Result: Kirim hasil seleksi akhir ke server
+    Result->>DB: Simpan hasil seleksi
+    Result->>Status: Hitung status terbaru yang boleh ditampilkan
+    Result-->>FE: Hasil seleksi berhasil diperbarui
 
-    alt periode sudah is_published
-        Result->>Socket: POST /notify-result-updated
+    alt periode sudah dipublish
+        Result->>Socket: Kabari dashboard bahwa hasil diperbarui
         alt status lulus
-            Result->>Notif: sendWhatsApp(template: selection_result_passed)
+            Result->>Notif: Siapkan pesan siswa lulus
         else status tidak lulus
-            Result->>Notif: sendWhatsApp(template: selection_result_failed)
+            Result->>Notif: Siapkan pesan siswa tidak lulus
         end
-        Notif->>Socket: POST /send-whatsapp
+        Notif->>Socket: Teruskan pesan ke gateway WhatsApp
         Socket->>WA: Kirim WhatsApp hasil seleksi
-    else periode belum is_published
+    else periode belum dipublish
         Result-->>FE: Hasil tersimpan untuk admin, belum dikirim sebagai hasil seleksi siswa
     end
 
     Note over Siswa, Answer: Status yang terlihat oleh siswa
     Siswa->>FE: Lihat status pendaftaran
-    FE->>Answer: GET /api/form/answer/group/respondent/{submissionId}
-    Answer->>DB: Ambil Answers, Period, Result
-    Answer->>Status: Hitung validation_status
-    alt role siswa dan periode belum is_published
-        Answer-->>FE: validation_status tampil, result selection fields null
-    else admin atau periode sudah is_published
-        Answer-->>FE: validation_status + data result sesuai akses
+    FE->>Answer: Minta detail status pendaftaran
+    Answer->>DB: Ambil jawaban, periode, dan hasil pendaftaran
+    Answer->>Status: Tentukan status yang boleh dilihat siswa
+    alt siswa membuka periode yang belum dipublish
+        Answer-->>FE: Status berkas tampil, hasil final masih kosong
+    else admin/panitia atau periode sudah dipublish
+        Answer-->>FE: Status berkas dan data hasil tampil sesuai akses
     end
-```
+Catatan Arsitektur
+Halaman Web dipakai siswa dan admin untuk mengirim data ke server.
+Layanan Login menangani login, OTP, registrasi, reset password, dan token login.
+Layanan Pendaftaran menyimpan jawaban siswa, file berkas, dan nomor pendaftaran.
+Layanan Berkas dan Hasil menangani verifikasi berkas dan hasil seleksi.
+Aturan Status menentukan status yang boleh terlihat oleh siswa atau admin.
+Layanan Notifikasi mengambil template WhatsApp dan mengirim pesan melalui gateway.
+Server Realtime meneruskan perubahan status ke dashboard dan WhatsApp.
+Database utama pada flow ini: users, otps, tb_period, tb_questions, tb_answers, tb_results, notification_whatsapp_messages, dan tb_notification.
+Aturan Visibility Hasil
+Siswa tetap bisa melihat status berkas. Jika periode belum dipublish, hasil kelulusan belum ditampilkan ke siswa. Secara teknis backend mengosongkan field selection_type, value, dan status sampai tb_period.is_published = true. Admin/panitia tetap bisa melihat dan mengelola hasil sesuai kebutuhan operasional.
 
-## Catatan Arsitektur
+Route update hasil seleksi saat ini mengikuti kode backend: PUT /api/respondent/result/upadte/{submissionId}.
 
-1. **Frontend React SPA** mengakses backend via REST API dan token Laravel Sanctum.
-2. **AuthController** menangani login, OTP, registrasi, reset password, dan token Sanctum.
-3. **AnswerController** menangani submit jawaban, upload file, grouping submission, dan response status pendaftaran siswa.
-4. **ResultController** menangani verifikasi berkas dan update hasil seleksi.
-5. **StatusHelper** menghitung `validation_status`, misalnya `Belum_Diverifikasi`, `Berkas_Diterima`, `Berkas_Dikembalikan`, `Lulus`, atau `Tidak_Lulus`.
-6. **NotificationHelper** mengambil template WhatsApp dari database dan mengirim payload ke Socket.IO server melalui endpoint `/send-whatsapp`.
-7. **Socket.IO server** menerima event dari Laravel melalui `SOCKET_SERVER_URL`, lalu meneruskan realtime update ke frontend atau pesan WhatsApp ke user.
-8. **Database utama** pada flow ini: `users`, `otps`, `tb_period`, `tb_questions`, `tb_answers`, `tb_results`, `notification_whatsapp_messages`, dan `tb_notification`.
-
-## Aturan Visibility Hasil
-
-Siswa tetap bisa melihat `validation_status` untuk status berkas. Data hasil kelulusan (`selection_type`, `value`, dan `status`) tidak ditampilkan ke siswa ketika `tb_period.is_published = false`; backend mengirim field tersebut sebagai `null`. Admin/panitia tetap bisa melihat dan mengelola hasil sesuai kebutuhan operasional.
-
-Route update hasil seleksi saat ini mengikuti kode backend: `PUT /api/respondent/result/upadte/{submissionId}`.
