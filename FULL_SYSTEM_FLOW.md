@@ -110,7 +110,7 @@ sequenceDiagram
     Answer->>DB: Ambil Answers, Period, Result
     Answer->>Status: Hitung validation_status
     alt role siswa dan periode belum is_published
-        Answer-->>FE: validation_status tampil; result.selection_type/value/status = null
+        Answer-->>FE: validation_status tampil, result selection fields null
     else admin atau periode sudah is_published
         Answer-->>FE: validation_status + data result sesuai akses
     end
